@@ -31,8 +31,19 @@ program
 
       // 2. 构建 Context 数据
       const context: FenceContext = {
+        schemaVersion: "0.2.1",
         generatedAt: new Date().toISOString(),
-        projectRoot: root,
+        // 🌟 修复点 1: 替换 projectRoot 为 projectInfo
+        projectInfo: {
+            name: path.basename(root) // 使用文件夹名作为项目名
+        },
+        // 🌟 修复点 2: 增加 contentHash (MVP 暂时用简单的组合哈希或时间戳占位)
+        contentHash: `hash-${Date.now()}-${components.length}-${tokens.length}`, 
+        stats: {
+            componentCount: components.length,
+            tokenCount: tokens.length,
+            shadowTokenCount: tokens.filter(t => t.source === 'scan').length // 简单计算
+        },
         tokens,
         components
       };

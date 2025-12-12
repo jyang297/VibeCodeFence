@@ -30,6 +30,12 @@ export interface ComponentMeta {
   exportType: ImportType;// 指导 AI 生成正确的 import 语句
   props: ComponentProp[];
   skeleton: string;      // 脱敏后的代码骨架 (Sanitized Skeleton)
+  fingerprint: StyleFingerprint; // 风格指纹，辅助 AI 理解组件风格
+}
+
+export interface StyleFingerprint {
+  colors: string[];
+  spacings: string[];
 }
 
 export interface TokenMeta {
