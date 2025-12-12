@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "0.2.1",
+  "generatedAt": "2025-12-12T04:16:42.009Z",
+  "projectInfo": {
+    "name": "vibe-fence-core"
+  },
+  "contentHash": "hash-1765513002010-0-18",
+  "stats": {
+    "componentCount": 0,
+    "tokenCount": 18,
+    "shadowTokenCount": 18
+  },
+  "tokens": [
+    {
+      "type": "spacing",
+      "value": "p-4",
+      "count": 5,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "16px",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "1rem",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "8px",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "radius",
+      "value": "rounded-lg",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "typography",
+      "value": "text-xl",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "typography",
+      "value": "font-bold",
+      "count": 2,
+      "source": "scan"
+    },
+    {
+      "type": "color",
+      "value": "#2563eb",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "color",
+      "value": "#ffffff",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "pt-4",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "m-2",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "gap-x-4",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "m-2.5",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "spacing",
+      "value": "gap-4",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "radius",
+      "value": "rounded-md",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "radius",
+      "value": "rounded-tr-xl",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "typography",
+      "value": "text-sm",
+      "count": 1,
+      "source": "scan"
+    },
+    {
+      "type": "shadow",
+      "value": "shadow-md",
+      "count": 1,
+      "source": "scan"
+    }
+  ],
+  "components": []
+}
