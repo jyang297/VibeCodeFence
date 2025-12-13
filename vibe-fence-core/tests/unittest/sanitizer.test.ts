@@ -1,5 +1,5 @@
 // tests/scanner.test.ts
-import { scanComponents } from '../src/core/scanner';
+import { scanComponents } from '../../src/core/scanner';
 import path from 'path';
 import fs from 'fs-extra';
 

@@ -6,6 +6,7 @@ import fs from 'fs-extra';
 import { scanShadowTokens } from './core/histogram';
 import { scanComponents } from './core/scanner';
 import { FenceContext } from './types';
+import { generateFenceContext } from './core/runner';
 
 const program = new Command();
 
@@ -30,23 +31,7 @@ program
       ]);
 
       // 2. 构建 Context 数据
-      const context: FenceContext = {
-        schemaVersion: "0.2.1",
-        generatedAt: new Date().toISOString(),
-        // 🌟 修复点 1: 替换 projectRoot 为 projectInfo
-        projectInfo: {
-            name: path.basename(root) // 使用文件夹名作为项目名
-        },
-        // 🌟 修复点 2: 增加 contentHash (MVP 暂时用简单的组合哈希或时间戳占位)
-        contentHash: `hash-${Date.now()}-${components.length}-${tokens.length}`, 
-        stats: {
-            componentCount: components.length,
-            tokenCount: tokens.length,
-            shadowTokenCount: tokens.filter(t => t.source === 'scan').length // 简单计算
-        },
-        tokens,
-        components
-      };
+      const context = await generateFenceContext(root);
 
       // 3. 写入 .fence/context.json
       const fenceDir = path.join(root, '.fence');
@@ -56,21 +41,21 @@ program
       await fs.writeJSON(outputPath, context, { spaces: 2 });
 
       // 4. 输出报告
-      console.log(chalk.green(`\n✅ Scan Complete!`));
+      console.log(chalk.green(`\nScan Complete!`));
       console.log(`   - Components Processed: ${components.length}`);
       console.log(`   - Shadow Tokens Found: ${tokens.length}`);
       console.log(`   - Context saved to: ${chalk.underline(outputPath)}`);
 
       // 5. 展示脱敏效果 (Demo)
       if (components.length > 0) {
-        console.log(chalk.yellow('\n👻 Sanitization Preview (What AI sees):'));
+        console.log(chalk.yellow('\nSanitization Preview (What AI sees):'));
         console.log(chalk.gray('----------------------------------------'));
         console.log(components[0].skeleton);
         console.log(chalk.gray('----------------------------------------'));
       }
 
     } catch (error) {
-      console.error(chalk.red('❌ Scan failed:'), error);
+      console.error(chalk.red('Scan failed:'), error);
     }
   });
 

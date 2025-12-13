@@ -3,7 +3,7 @@ import fg from 'fast-glob';
 import fs from 'fs-extra';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
-import { TokenMeta, TokenType } from '../types';
+import { TokenMeta, TokenType } from '@/types';
 
 extend([namesPlugin]);
 
