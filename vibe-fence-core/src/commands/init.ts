@@ -3,6 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import inquirer from 'inquirer'; // 需要 npm install inquirer
 import chalk from 'chalk';
+import { mapUsageToTokens } from '@/core/token-manager';
+import { DEFAULT_CONFIG } from '@/types';
 
 export async function initFence(rootPath: string) {
   const fenceDir = path.join(rootPath, '.fence');
@@ -25,7 +27,9 @@ export async function initFence(rootPath: string) {
   const config = {
     profile: answers.profile,
     strict: false, // 默认为 false (Light Mode)，即使是 Team 也建议先渐进式引入
-    updatedAt: new Date().toISOString()
+    scanner: {
+      mapUsageToTokens: DEFAULT_CONFIG.scanner!.maxTokenUsageInfo
+    }
   };
 
   // 2. 写入 Config

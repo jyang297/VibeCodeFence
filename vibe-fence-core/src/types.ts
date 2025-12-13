@@ -44,6 +44,7 @@ export interface TokenMeta {
   count: number;         // 出现频次
   source: TokenSource;   // 'config' = predefined, 'scan'=something new
   inferredName?: string; // 预留: 如果推断出语义名(e.g. "primary")存这里
+  usedBy?: string[];        // 预留: 第一次发现的组件路径，便于追踪
 }
 
 export interface FenceContext {
@@ -71,4 +72,17 @@ export interface FenceConfig {
   profile: FenceProfile;
   strict: boolean; // 是否开启严格模式
   // 未来扩展: excludedPaths, customRules 等
+  scanner?: {
+    maxTokenUsageInfo: number; // 每个 Token 记录的最大组件引用数，default 5
+  };
+  
 }
+
+
+export const DEFAULT_CONFIG: FenceConfig = {
+  profile: 'local',
+  strict: false,
+  scanner: {
+    maxTokenUsageInfo: 5 // 默认值
+  }
+};

@@ -9,6 +9,7 @@ const fs_extra_1 = __importDefault(require("fs-extra"));
 const path_1 = __importDefault(require("path"));
 const inquirer_1 = __importDefault(require("inquirer")); // 需要 npm install inquirer
 const chalk_1 = __importDefault(require("chalk"));
+const types_1 = require("../types");
 async function initFence(rootPath) {
     const fenceDir = path_1.default.join(rootPath, '.fence');
     const configPath = path_1.default.join(fenceDir, 'fence.config.json');
@@ -28,7 +29,9 @@ async function initFence(rootPath) {
     const config = {
         profile: answers.profile,
         strict: false, // 默认为 false (Light Mode)，即使是 Team 也建议先渐进式引入
-        updatedAt: new Date().toISOString()
+        scanner: {
+            mapUsageToTokens: types_1.DEFAULT_CONFIG.scanner.maxTokenUsageInfo
+        }
     };
     // 2. 写入 Config
     await fs_extra_1.default.ensureDir(fenceDir);
