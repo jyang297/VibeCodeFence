@@ -11,6 +11,7 @@ const fs_extra_1 = __importDefault(require("fs-extra"));
 const histogram_1 = require("./core/histogram");
 const scanner_1 = require("./core/scanner");
 const runner_1 = require("./core/runner");
+const query_1 = require("./commands/query");
 const program = new commander_1.Command();
 program
     .name('fence')
@@ -53,4 +54,5 @@ program
         console.error(chalk_1.default.red('Scan failed:'), error);
     }
 });
-program.parse();
+program.addCommand(query_1.queryCommand);
+program.parse(process.argv);

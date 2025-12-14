@@ -1,5 +1,6 @@
 // src/index.ts
 import { Command } from 'commander';
+import { initFence } from './commands/init';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs-extra';
@@ -7,6 +8,7 @@ import { scanShadowTokens } from './core/histogram';
 import { scanComponents } from './core/scanner';
 import { FenceContext } from './types';
 import { generateFenceContext } from './core/runner';
+import { queryCommand } from './commands/query';
 
 const program = new Command();
 
@@ -59,4 +61,6 @@ program
     }
   });
 
-program.parse();
+program.addCommand(queryCommand);
+
+program.parse(process.argv);
