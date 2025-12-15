@@ -1,66 +1,96 @@
-// src/commands/init.ts
+import { Command } from 'commander';
 import fs from 'fs-extra';
 import path from 'path';
-import inquirer from 'inquirer'; // 需要 npm install inquirer
+import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { mapUsageToTokens } from '@/core/token-manager';
-import { DEFAULT_CONFIG } from '@/types';
+// 使用相对路径以确保安全
+import { DEFAULT_CONFIG } from '../types'; 
 
-export async function initFence(rootPath: string) {
-  const fenceDir = path.join(rootPath, '.fence');
-  const configPath = path.join(fenceDir, 'fence.config.json');
-  const gitignorePath = path.join(rootPath, '.gitignore');
+export const initCommand = new Command('init')
+  .description('Initialize Vibe Fence configuration interactively')
+  .action(async () => {
+    const rootPath = process.cwd();
+    const fenceDir = path.join(rootPath, '.fence');
+    const configPath = path.join(fenceDir, 'fence.config.json');
+    const gitignorePath = path.join(rootPath, '.gitignore');
 
-  // 1. 询问用户
-  const answers = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'profile',
-      message: 'How are you working on this project?',
-      choices: [
-        { name: '🏂 Solo (Local only, added to .gitignore)', value: 'local' },
-        { name: '🛡️ Team (Shared via Git, SSOT)', value: 'shared' }
-      ]
-    }
-  ]);
+    console.log(chalk.blue(`⚙️  Initializing Vibe Fence...`));
 
-  const config = {
-    profile: answers.profile,
-    strict: false, // 默认为 false (Light Mode)，即使是 Team 也建议先渐进式引入
-    scanner: {
-      mapUsageToTokens: DEFAULT_CONFIG.scanner!.maxTokenUsageInfo
-    }
-  };
+    // 1. 交互式询问
+    const answers = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'profile',
+        message: 'How will you use Vibe Fence in this project?',
+        choices: [
+          { 
+            name: '🏂 Solo (Local mode)', 
+            value: 'local',
+            short: 'Solo'
+          },
+          { 
+            name: '🛡️ Team (Shared mode, commits config)', 
+            value: 'shared',
+            short: 'Team'
+          }
+        ]
+      }
+    ]);
 
-  // 2. 写入 Config
-  await fs.ensureDir(fenceDir);
-  await fs.writeJSON(configPath, config, { spaces: 2 });
+    // 2. 构建配置对象
+    // 修复了之前的 key 命名错误
+    const config = {
+      profile: answers.profile,
+      strict: false,
+      scanner: {
+        // 使用默认配置中的数值，或者硬编码一个合理的默认值 (e.g. 5)
+        maxTokenUsageInfo: DEFAULT_CONFIG.scanner?.maxTokenUsageInfo ?? 5
+      }
+    };
 
-  // 3. 处理 .gitignore
-  let gitignoreContent = '';
-  if (await fs.pathExists(gitignorePath)) {
-    gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+    // 3. 写入 Config 文件
+    await fs.ensureDir(fenceDir);
+    await fs.writeJSON(configPath, config, { spaces: 2 });
+    console.log(chalk.green(`   ✅ Created .fence/fence.config.json`));
+
+    // 4. 智能处理 .gitignore
+    await handleGitignore(gitignorePath, answers.profile === 'local');
+
+    console.log(chalk.blue(`\n🎉 Initialization Complete!`));
+    console.log(`   Run ${chalk.cyan('fence scan')} to generate your first context.`);
+  });
+
+/**
+ * 辅助函数：处理 .gitignore 逻辑
+ * Solo 模式 -> 添加 .fence
+ * Team 模式 -> 移除 .fence
+ */
+async function handleGitignore(gitignorePath: string, isLocal: boolean) {
+  const ignoreEntry = '.fence';
+  
+  // 如果文件不存在，创建一个空的
+  if (!await fs.pathExists(gitignorePath)) {
+    await fs.writeFile(gitignorePath, '');
   }
 
-  const ignoreEntry = '.fence';
-  const hasIgnore = gitignoreContent.includes(ignoreEntry);
+  let content = await fs.readFile(gitignorePath, 'utf-8');
+  const hasEntry = content.includes(ignoreEntry);
 
-  if (answers.profile === 'local') {
-    // 🏂 Solo: 必须 Ignore
-    if (!hasIgnore) {
-      await fs.appendFile(gitignorePath, `\n# TeamVibeFence\n${ignoreEntry}\n`);
-      console.log(chalk.green(`✔ Added .fence to .gitignore`));
+  if (isLocal) {
+    // 🏂 Local Mode: 必须忽略
+    if (!hasEntry) {
+      // 确保在新的一行添加
+      const prefix = content.endsWith('\n') || content.length === 0 ? '' : '\n';
+      await fs.appendFile(gitignorePath, `${prefix}# TeamVibeFence Context\n${ignoreEntry}\n`);
+      console.log(chalk.green(`   🙈 Added .fence to .gitignore (Local Mode)`));
     }
   } else {
-    // 🛡️ Team: 必须 Commit (从 gitignore 移除)
-    if (hasIgnore) {
-      // 简单的移除逻辑 (正则替换)
-      const newContent = gitignoreContent.replace(new RegExp(`\\n?${ignoreEntry}\\n?`, 'g'), '\n');
-      await fs.writeFile(gitignorePath, newContent);
-      console.log(chalk.yellow(`✔ Removed .fence from .gitignore (Ready to commit)`));
+    // 🛡️ Shared Mode: 必须提交 (不能忽略)
+    if (hasEntry) {
+      // 简单的行删除逻辑
+      const lines = content.split('\n').filter(line => line.trim() !== ignoreEntry && line.trim() !== '# TeamVibeFence Context');
+      await fs.writeFile(gitignorePath, lines.join('\n'));
+      console.log(chalk.yellow(`   👀 Removed .fence from .gitignore (Shared Mode)`));
     }
   }
-
-  console.log(chalk.blue(`\n✅ Fence initialized in ${answers.profile} mode!`));
-  console.log(`Run ${chalk.bold('fence scan')} to generate your first context.`);
 }
