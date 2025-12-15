@@ -6,6 +6,7 @@ import { initCommand } from './commands/init';
 import { scanCommand } from './commands/scan';
 import { queryCommand } from './commands/query';
 import { ejectCommand } from './commands/eject';
+import { reportCommand } from './commands/report';
 
 const program = new Command();
 
@@ -18,6 +19,7 @@ program.addCommand(initCommand);
 program.addCommand(scanCommand);
 program.addCommand(queryCommand);
 program.addCommand(ejectCommand);
+program.addCommand(reportCommand);
 
 // 错误处理：当用户输入未知命令时
 program.on('command:*', () => {

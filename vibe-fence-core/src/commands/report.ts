@@ -17,7 +17,7 @@ export const reportCommand = new Command('report')
     }
     const context: FenceContext = await fs.readJSON(contextPath);
 
-    // 2. 计算健康度 (简单算法)
+    // 2. 计算健康度 (简单算法) TODO: 可以更复杂
     // 假设每个 Shadow Token 扣 5 分
     const shadowCount = context.tokens.filter(t => t.source === 'scan').length;
     const healthScore = Math.max(0, 100 - (shadowCount * 5));
@@ -27,7 +27,7 @@ export const reportCommand = new Command('report')
     if (healthScore < 80) scoreColor = chalk.yellow;
     if (healthScore < 60) scoreColor = chalk.red;
 
-    // --- 渲染 UI ---
+    // --- UI ---
     console.clear();
     console.log(chalk.bold.blue(`\n📊 Vibe Fence Health Report`));
     console.log(chalk.gray(`   Project: ${context.projectInfo.name}`));
