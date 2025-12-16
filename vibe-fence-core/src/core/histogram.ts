@@ -1,11 +1,14 @@
 // src/core/histogram.ts
-import fg from 'fast-glob';
+import { glob } from 'fast-glob';
+import path from 'path';
 import fs from 'fs-extra';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
-import { TokenMeta, TokenType } from '@/types';
+import { TokenMeta, TokenType, FenceConfig } from '@/types';
 
 extend([namesPlugin]);
+
+const HEX_COLOR_REGEX = /#(?:[0-9a-fA-F]{3}){1,2}(?![0-9a-fA-F])/g;
 
 // --- 1. 定义探测器接口 (Detector Interface) ---
 interface StyleDetector {
@@ -55,54 +58,73 @@ const DETECTORS: StyleDetector[] = [
 ];
 
 // --- 3. 通用扫描逻辑 ---
-export async function scanShadowTokens(rootPath: string): Promise<TokenMeta[]> {
-  // 存储结构: { 'color': { '#fff': 10 }, 'spacing': { 'p-4': 50 } }
-  const stats: Record<string, Map<string, number>> = {};
-  
-  // 初始化 Map
-  DETECTORS.forEach(d => stats[d.type] = new Map());
+export async function scanShadowTokens(root: string): Promise<TokenMeta[]> {
+  // 1. 🌟 新增: 读取 Config (复用 scanner 的逻辑)
+  const configPath = path.join(root, '.fence/fence.config.json');
+  let includePatterns = ['src/**/*.{ts,tsx,js,jsx}'];
+  let excludePatterns = ['**/node_modules/**'];
 
-  const files = await fg([`${rootPath}/src/**/*.{tsx,jsx,css,scss,ts}`], { 
-    ignore: ['**/node_modules/**', '**/.fence/**'] 
-  });
-
-  for (const file of files) {
-    const content = await fs.readFile(file, 'utf-8');
-
-    // 遍历所有探测器
-    DETECTORS.forEach(detector => {
-      const matches = content.match(detector.regex);
-      if (matches) {
-        matches.forEach(raw => {
-          const normalized = detector.normalize ? detector.normalize(raw) : raw;
-          if (normalized) {
-            const map = stats[detector.type];
-            map.set(normalized, (map.get(normalized) || 0) + 1);
-          }
-        });
-      }
-    });
+  if (await fs.pathExists(configPath)) {
+    try {
+      const config: FenceConfig = await fs.readJSON(configPath);
+      if (config.scan?.include) includePatterns = config.scan.include;
+      if (config.scan?.exclude) excludePatterns = config.scan.exclude;
+    } catch (e) {
+      // ignore config error
+    }
   }
 
-  // --- 4. 扁平化结果 ---
-  const results: TokenMeta[] = [];
-
-  Object.entries(stats).forEach(([type, map]) => {
-    // 对每种类型，取 Top 10 (避免噪音太多)
-    const topEntries = Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1]) // 降序
-      .slice(0, 10); // 只取前10名
-    
-    topEntries.forEach(([value, count]) => {
-      results.push({
-        type: type as TokenType,
-        value,
-        count,
-        source: 'scan'
-      });
-    });
+  // 2. 🌟 修改: 使用 Config 中的路径
+  const files = await glob(includePatterns, {
+    cwd: root,
+    absolute: true,
+    ignore: excludePatterns,
+    // 允许扫描 . 开头的目录 (如 .storybook 等，如果用户include了)
+    dot: true 
   });
 
-  // 全局再按频率排一次序，让高频的排前面
-  return results.sort((a, b) => b.count - a.count);
+  const tokenMap = new Map<string, TokenMeta>();
+
+  // 3. 遍历文件 (逻辑保持不变)
+  for (const file of files) {
+    const content = await fs.readFile(file, 'utf-8');
+    
+    // ... 原有的 extractTokensFromText 逻辑 ...
+    extractTokensFromText(content, 'color', HEX_COLOR_REGEX, file, tokenMap);
+    // extractTokensFromText(content, 'spacing', TAILWIND_SPACING_REGEX, file, tokenMap); // 如果你有这个
+  }
+
+  // 转换 Map 到 Array
+  return Array.from(tokenMap.values()).sort((a, b) => b.count - a.count);
+}
+
+// ... extractTokensFromText 保持不变 ...
+function extractTokensFromText(
+  content: string, 
+  type: 'color' | 'spacing', 
+  regex: RegExp, 
+  file: string, 
+  map: Map<string, TokenMeta>
+) {
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const value = match[0].toLowerCase(); // 归一化
+    const relativePath = path.basename(file); // 简化路径记录
+
+    if (!map.has(value)) {
+      map.set(value, { 
+        type, 
+        value, 
+        count: 0, 
+        usedBy: [],
+        source: 'scan' 
+      });
+    }
+
+    const token = map.get(value)!;
+    token.count++;
+    if (!token.usedBy?.includes(relativePath)) {
+      token.usedBy?.push(relativePath);
+    }
+  }
 }

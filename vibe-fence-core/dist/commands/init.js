@@ -5,11 +5,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.initCommand = void 0;
 const commander_1 = require("commander");
+const fast_glob_1 = require("fast-glob");
 const fs_extra_1 = __importDefault(require("fs-extra"));
 const path_1 = __importDefault(require("path"));
 const inquirer_1 = __importDefault(require("inquirer"));
 const chalk_1 = __importDefault(require("chalk"));
-// 使用相对路径以确保安全
 const types_1 = require("../types");
 exports.initCommand = new commander_1.Command('init')
     .description('Initialize Vibe Fence configuration interactively')
@@ -19,71 +19,112 @@ exports.initCommand = new commander_1.Command('init')
     const configPath = path_1.default.join(fenceDir, 'fence.config.json');
     const gitignorePath = path_1.default.join(rootPath, '.gitignore');
     console.log(chalk_1.default.blue(`⚙️  Initializing Vibe Fence...`));
-    // 1. 交互式询问
+    // --- 1. Auto-detection Logic (修复版) ---
+    console.log(chalk_1.default.blue(`\n🔍 Auto-detecting project structure...`));
+    const potentialRoots = await (0, fast_glob_1.glob)('**/package.json', {
+        ignore: ['**/node_modules/**', '**/.fence/**', '**/dist/**', '**/build/**'],
+        cwd: process.cwd(),
+        deep: 3 // 只看3层
+    });
+    const detectedPaths = [];
+    // Case A: 根目录就是前端项目
+    if (potentialRoots.includes('package.json')) {
+        console.log(chalk_1.default.gray(`   Found package.json in root.`));
+        detectedPaths.push('src/**/*.{ts,tsx,js,jsx}');
+    }
+    // Case B: 子目录是前端项目 (e.g. frontend/package.json)
+    for (const pkgPath of potentialRoots) {
+        if (pkgPath === 'package.json')
+            continue; // 跳过根目录(已处理)
+        const dir = path_1.default.dirname(pkgPath);
+        console.log(chalk_1.default.gray(`   Found sub-project in: ${dir}`));
+        // 假设源码都在 src 下，这是 React/Next 项目的通例
+        // 如果你的项目不在 src 下 (比如 pages/), 可以在这里增加判断逻辑
+        detectedPaths.push(`${dir}/src/**/*.{ts,tsx,js,jsx}`);
+    }
+    // --- 2. Path Confirmation ---
+    let finalIncludes = [];
+    if (detectedPaths.length > 0) {
+        console.log(chalk_1.default.green(`   ✅ Detected potential source paths.`));
+        const confirm = await inquirer_1.default.prompt([
+            {
+                type: 'checkbox',
+                name: 'paths',
+                message: 'Select the paths to include in scanning:',
+                choices: detectedPaths.map(p => ({ name: p, value: p, checked: true })),
+                validate: (answer) => {
+                    if (answer.length < 1) {
+                        return 'You must choose at least one path.';
+                    }
+                    return true;
+                }
+            }
+        ]);
+        finalIncludes = confirm.paths;
+    }
+    else {
+        // Fallback
+        console.log(chalk_1.default.yellow(`   ⚠️  No standard structure detected.`));
+        console.log(chalk_1.default.yellow(`       Using default: src/**/*.{ts,tsx,js,jsx}`));
+        finalIncludes = ['src/**/*.{ts,tsx,js,jsx}'];
+    }
+    // --- 3. Profile Selection ---
     const answers = await inquirer_1.default.prompt([
         {
             type: 'list',
             name: 'profile',
             message: 'How will you use Vibe Fence in this project?',
             choices: [
-                {
-                    name: '🏂 Solo (Local mode)',
-                    value: 'local',
-                    short: 'Solo'
-                },
-                {
-                    name: '🛡️ Team (Shared mode, commits config)',
-                    value: 'shared',
-                    short: 'Team'
-                }
+                { name: '🏂 Solo (Local mode)', value: 'local' },
+                { name: '🛡️ Team (Shared mode)', value: 'shared' }
             ]
         }
     ]);
-    // 2. 构建配置对象
-    // 修复了之前的 key 命名错误
+    // --- 4. Build Config ---
     const config = {
         profile: answers.profile,
         strict: false,
         scanner: {
-            // 使用默认配置中的数值，或者硬编码一个合理的默认值 (e.g. 5)
             maxTokenUsageInfo: types_1.DEFAULT_CONFIG.scanner?.maxTokenUsageInfo ?? 5
+        },
+        // 🌟 写入 scan 配置
+        scan: {
+            include: finalIncludes,
+            exclude: [
+                '**/node_modules/**',
+                '**/dist/**',
+                '**/build/**',
+                '**/.next/**'
+            ]
         }
     };
-    // 3. 写入 Config 文件
+    // --- 5. Write Config ---
     await fs_extra_1.default.ensureDir(fenceDir);
     await fs_extra_1.default.writeJSON(configPath, config, { spaces: 2 });
     console.log(chalk_1.default.green(`   ✅ Created .fence/fence.config.json`));
-    // 4. 智能处理 .gitignore
+    // --- 6. Handle .gitignore ---
     await handleGitignore(gitignorePath, answers.profile === 'local');
     console.log(chalk_1.default.blue(`\n🎉 Initialization Complete!`));
-    console.log(`   Run ${chalk_1.default.cyan('fence scan')} to generate your first context.`);
+    console.log(`   Run ${chalk_1.default.cyan('fence scan')} to start.`);
 });
-/**
- * 辅助函数：处理 .gitignore 逻辑
- * Solo 模式 -> 添加 .fence
- * Team 模式 -> 移除 .fence
- */
+// ... handleGitignore 保持不变 ...
 async function handleGitignore(gitignorePath, isLocal) {
+    // ... (你的原有代码) ...
     const ignoreEntry = '.fence';
-    // 如果文件不存在，创建一个空的
     if (!await fs_extra_1.default.pathExists(gitignorePath)) {
         await fs_extra_1.default.writeFile(gitignorePath, '');
     }
     let content = await fs_extra_1.default.readFile(gitignorePath, 'utf-8');
     const hasEntry = content.includes(ignoreEntry);
     if (isLocal) {
-        // 🏂 Local Mode: 必须忽略
         if (!hasEntry) {
-            // 确保在新的一行添加
             const prefix = content.endsWith('\n') || content.length === 0 ? '' : '\n';
             await fs_extra_1.default.appendFile(gitignorePath, `${prefix}# TeamVibeFence Context\n${ignoreEntry}\n`);
             console.log(chalk_1.default.green(`   🙈 Added .fence to .gitignore (Local Mode)`));
         }
     }
     else {
-        // 🛡️ Shared Mode: 必须提交 (不能忽略)
         if (hasEntry) {
-            // 简单的行删除逻辑
             const lines = content.split('\n').filter(line => line.trim() !== ignoreEntry && line.trim() !== '# TeamVibeFence Context');
             await fs_extra_1.default.writeFile(gitignorePath, lines.join('\n'));
             console.log(chalk_1.default.yellow(`   👀 Removed .fence from .gitignore (Shared Mode)`));

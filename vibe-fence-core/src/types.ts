@@ -16,12 +16,19 @@ export type TokenType =
 export type TokenSource = 'scan' | 'config'; // scan=代码中发现, config=配置文件读取
 export type FenceProfile = 'local' | 'shared';
 
+export interface PropItem {
+  name: string;
+  type: string; // e.g. "string", "number", "boolean", "string | number"
+  required: boolean;
+  defaultValue?: string; // e.g. "true", "42", "'default text'"
+}
+
 export interface ComponentProp {
   name: string;
   type: string;          // 原始类型定义 e.g. "string | number"
   required: boolean;
   defaultValue?: string; // 默认值，减少 AI 幻觉
-  description: string;   // JSDoc 注释，AI 理解意图的关键
+  description?: string;   // JSDoc 注释，AI 理解意图的关键
 }
 
 export interface ComponentMeta {
@@ -36,6 +43,7 @@ export interface ComponentMeta {
 export interface StyleFingerprint {
   colors: string[];
   spacings: string[];
+  securityDeps?: string[];
 }
 
 export interface TokenMeta {
@@ -71,6 +79,11 @@ export interface FenceContext {
 export interface FenceConfig {
   profile: FenceProfile;
   strict: boolean; // 是否开启严格模式
+  scan: {
+    include: string[]; // 扫描包含的路径glob patterns
+    exclude: string[]; // 扫描排除的路径
+    maxDepth?: number;  // 最大扫描深度
+  }
   // 未来扩展: excludedPaths, customRules 等
   scanner?: {
     maxTokenUsageInfo: number; // 每个 Token 记录的最大组件引用数，default 5
@@ -80,6 +93,10 @@ export interface FenceConfig {
 
 
 export const DEFAULT_CONFIG: FenceConfig = {
+  scan: {
+    include: ['src/**/*.{ts,tsx,js,jsx}'],
+    exclude: ['node_modules/**', 'dist/**', 'build/**']
+  },
   profile: 'local',
   strict: false,
   scanner: {

@@ -5,11 +5,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.scanShadowTokens = scanShadowTokens;
 // src/core/histogram.ts
-const fast_glob_1 = __importDefault(require("fast-glob"));
+const fast_glob_1 = require("fast-glob");
+const path_1 = __importDefault(require("path"));
 const fs_extra_1 = __importDefault(require("fs-extra"));
 const colord_1 = require("colord");
 const names_1 = __importDefault(require("colord/plugins/names"));
 (0, colord_1.extend)([names_1.default]);
+const HEX_COLOR_REGEX = /#(?:[0-9a-fA-F]{3}){1,2}(?![0-9a-fA-F])/g;
 // --- 2. 配置探测规则 (The Rules) ---
 const DETECTORS = [
     {
@@ -49,46 +51,61 @@ const DETECTORS = [
     }
 ];
 // --- 3. 通用扫描逻辑 ---
-async function scanShadowTokens(rootPath) {
-    // 存储结构: { 'color': { '#fff': 10 }, 'spacing': { 'p-4': 50 } }
-    const stats = {};
-    // 初始化 Map
-    DETECTORS.forEach(d => stats[d.type] = new Map());
-    const files = await (0, fast_glob_1.default)([`${rootPath}/src/**/*.{tsx,jsx,css,scss,ts}`], {
-        ignore: ['**/node_modules/**', '**/.fence/**']
+async function scanShadowTokens(root) {
+    // 1. 🌟 新增: 读取 Config (复用 scanner 的逻辑)
+    const configPath = path_1.default.join(root, '.fence/fence.config.json');
+    let includePatterns = ['src/**/*.{ts,tsx,js,jsx}'];
+    let excludePatterns = ['**/node_modules/**'];
+    if (await fs_extra_1.default.pathExists(configPath)) {
+        try {
+            const config = await fs_extra_1.default.readJSON(configPath);
+            if (config.scan?.include)
+                includePatterns = config.scan.include;
+            if (config.scan?.exclude)
+                excludePatterns = config.scan.exclude;
+        }
+        catch (e) {
+            // ignore config error
+        }
+    }
+    // 2. 🌟 修改: 使用 Config 中的路径
+    const files = await (0, fast_glob_1.glob)(includePatterns, {
+        cwd: root,
+        absolute: true,
+        ignore: excludePatterns,
+        // 允许扫描 . 开头的目录 (如 .storybook 等，如果用户include了)
+        dot: true
     });
+    const tokenMap = new Map();
+    // 3. 遍历文件 (逻辑保持不变)
     for (const file of files) {
         const content = await fs_extra_1.default.readFile(file, 'utf-8');
-        // 遍历所有探测器
-        DETECTORS.forEach(detector => {
-            const matches = content.match(detector.regex);
-            if (matches) {
-                matches.forEach(raw => {
-                    const normalized = detector.normalize ? detector.normalize(raw) : raw;
-                    if (normalized) {
-                        const map = stats[detector.type];
-                        map.set(normalized, (map.get(normalized) || 0) + 1);
-                    }
-                });
-            }
-        });
+        // ... 原有的 extractTokensFromText 逻辑 ...
+        extractTokensFromText(content, 'color', HEX_COLOR_REGEX, file, tokenMap);
+        // extractTokensFromText(content, 'spacing', TAILWIND_SPACING_REGEX, file, tokenMap); // 如果你有这个
     }
-    // --- 4. 扁平化结果 ---
-    const results = [];
-    Object.entries(stats).forEach(([type, map]) => {
-        // 对每种类型，取 Top 10 (避免噪音太多)
-        const topEntries = Array.from(map.entries())
-            .sort((a, b) => b[1] - a[1]) // 降序
-            .slice(0, 10); // 只取前10名
-        topEntries.forEach(([value, count]) => {
-            results.push({
-                type: type,
+    // 转换 Map 到 Array
+    return Array.from(tokenMap.values()).sort((a, b) => b.count - a.count);
+}
+// ... extractTokensFromText 保持不变 ...
+function extractTokensFromText(content, type, regex, file, map) {
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+        const value = match[0].toLowerCase(); // 归一化
+        const relativePath = path_1.default.basename(file); // 简化路径记录
+        if (!map.has(value)) {
+            map.set(value, {
+                type,
                 value,
-                count,
+                count: 0,
+                usedBy: [],
                 source: 'scan'
             });
-        });
-    });
-    // 全局再按频率排一次序，让高频的排前面
-    return results.sort((a, b) => b.count - a.count);
+        }
+        const token = map.get(value);
+        token.count++;
+        if (!token.usedBy?.includes(relativePath)) {
+            token.usedBy?.push(relativePath);
+        }
+    }
 }

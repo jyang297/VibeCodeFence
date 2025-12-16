@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { glob } from 'fast-glob';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs-extra';

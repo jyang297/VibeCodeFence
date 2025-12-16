@@ -9,6 +9,9 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.js"
   },
+  "bin": {
+    "fence": "dist/index.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
