@@ -19,27 +19,26 @@ exports.initCommand = new commander_1.Command('init')
     const configPath = path_1.default.join(fenceDir, 'fence.config.json');
     const gitignorePath = path_1.default.join(rootPath, '.gitignore');
     console.log(chalk_1.default.blue(`⚙️  Initializing Vibe Fence...`));
-    // --- 1. Auto-detection Logic (修复版) ---
+    // --- 1. Auto-detection Logic ---
     console.log(chalk_1.default.blue(`\n🔍 Auto-detecting project structure...`));
+    // 忽略常见构建目录
     const potentialRoots = await (0, fast_glob_1.glob)('**/package.json', {
-        ignore: ['**/node_modules/**', '**/.fence/**', '**/dist/**', '**/build/**'],
+        ignore: ['**/node_modules/**', '**/.fence/**', '**/dist/**', '**/build/**', '**/.git/**'],
         cwd: process.cwd(),
-        deep: 3 // 只看3层
+        deep: 3
     });
     const detectedPaths = [];
-    // Case A: 根目录就是前端项目
+    // Case A: Root
     if (potentialRoots.includes('package.json')) {
         console.log(chalk_1.default.gray(`   Found package.json in root.`));
         detectedPaths.push('src/**/*.{ts,tsx,js,jsx}');
     }
-    // Case B: 子目录是前端项目 (e.g. frontend/package.json)
+    // Case B: Sub-projects
     for (const pkgPath of potentialRoots) {
         if (pkgPath === 'package.json')
-            continue; // 跳过根目录(已处理)
+            continue;
         const dir = path_1.default.dirname(pkgPath);
         console.log(chalk_1.default.gray(`   Found sub-project in: ${dir}`));
-        // 假设源码都在 src 下，这是 React/Next 项目的通例
-        // 如果你的项目不在 src 下 (比如 pages/), 可以在这里增加判断逻辑
         detectedPaths.push(`${dir}/src/**/*.{ts,tsx,js,jsx}`);
     }
     // --- 2. Path Confirmation ---
@@ -52,18 +51,12 @@ exports.initCommand = new commander_1.Command('init')
                 name: 'paths',
                 message: 'Select the paths to include in scanning:',
                 choices: detectedPaths.map(p => ({ name: p, value: p, checked: true })),
-                validate: (answer) => {
-                    if (answer.length < 1) {
-                        return 'You must choose at least one path.';
-                    }
-                    return true;
-                }
+                validate: (answer) => answer.length > 0 ? true : 'You must choose at least one path.'
             }
         ]);
         finalIncludes = confirm.paths;
     }
     else {
-        // Fallback
         console.log(chalk_1.default.yellow(`   ⚠️  No standard structure detected.`));
         console.log(chalk_1.default.yellow(`       Using default: src/**/*.{ts,tsx,js,jsx}`));
         finalIncludes = ['src/**/*.{ts,tsx,js,jsx}'];
@@ -80,21 +73,25 @@ exports.initCommand = new commander_1.Command('init')
             ]
         }
     ]);
-    // --- 4. Build Config ---
+    // --- 4. Build Config (Updated for new Schema) ---
     const config = {
         profile: answers.profile,
-        strict: false,
+        // 默认开启的 Inspector
+        inspectors: {
+            colors: true,
+            customRules: {}
+        },
         scanner: {
             maxTokenUsageInfo: types_1.DEFAULT_CONFIG.scanner?.maxTokenUsageInfo ?? 5
         },
-        // 🌟 写入 scan 配置
         scan: {
             include: finalIncludes,
             exclude: [
                 '**/node_modules/**',
                 '**/dist/**',
                 '**/build/**',
-                '**/.next/**'
+                '**/.next/**',
+                '**/coverage/**'
             ]
         }
     };
@@ -107,9 +104,8 @@ exports.initCommand = new commander_1.Command('init')
     console.log(chalk_1.default.blue(`\n🎉 Initialization Complete!`));
     console.log(`   Run ${chalk_1.default.cyan('fence scan')} to start.`);
 });
-// ... handleGitignore 保持不变 ...
+// 辅助函数保持不变
 async function handleGitignore(gitignorePath, isLocal) {
-    // ... (你的原有代码) ...
     const ignoreEntry = '.fence';
     if (!await fs_extra_1.default.pathExists(gitignorePath)) {
         await fs_extra_1.default.writeFile(gitignorePath, '');

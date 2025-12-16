@@ -4,48 +4,24 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.scanComponents = scanComponents;
-const fast_glob_1 = require("fast-glob");
+const ts_morph_1 = require("ts-morph");
 const path_1 = __importDefault(require("path"));
 const fs_extra_1 = __importDefault(require("fs-extra"));
-// 1. 🌟 Fix: 引入 ts 命名空间，而不是直接引入 Enum
-const ts_morph_1 = require("ts-morph");
 const chalk_1 = __importDefault(require("chalk"));
-// 2. 🌟 Fix: 确保这里引用的文件存在 (Step 2 会创建它)
-const ast_parser_1 = require("../core/ast-parser");
-async function scanComponents(root) {
-    // 1. 读取 Config
-    const configPath = path_1.default.join(root, '.fence/fence.config.json');
-    let includePatterns = ['src/**/*.{ts,tsx,js,jsx}'];
-    let excludePatterns = ['**/node_modules/**'];
-    if (await fs_extra_1.default.pathExists(configPath)) {
-        try {
-            const config = await fs_extra_1.default.readJSON(configPath);
-            if (config.scan?.include)
-                includePatterns = config.scan.include;
-            if (config.scan?.exclude)
-                excludePatterns = config.scan.exclude;
-        }
-        catch (e) {
-            console.warn('⚠️ Config error');
-        }
-    }
-    // 2. 找到所有目标文件
-    const files = await (0, fast_glob_1.glob)(includePatterns, {
-        cwd: root,
-        absolute: true,
-        ignore: excludePatterns,
-        dot: true
-    });
+const ast_parser_1 = require("./ast-parser");
+/**
+ * 组件扫描器
+ * 专注于 AST 解析，提取结构化组件信息
+ */
+async function scanComponents(files, root) {
     if (files.length === 0)
         return [];
-    // 3. 动态寻找 tsconfig
+    // 1. Context-Aware Config Loading
     const firstFileDir = path_1.default.dirname(files[0]);
     const tsConfigPath = await findUp('tsconfig.json', firstFileDir, root);
-    // 4. 🌟 Fix: 使用 ts.ScriptTarget 等枚举
     let compilerOptions = {
         allowJs: true,
         target: ts_morph_1.ts.ScriptTarget.ESNext,
-        // 🌟 Fix: ModuleResolutionKind 才是给 moduleResolution 用的，ModuleKind 是给 module 用的
         moduleResolution: ts_morph_1.ts.ModuleResolutionKind.NodeNext,
         noResolve: true,
         skipLibCheck: true,
@@ -54,34 +30,37 @@ async function scanComponents(root) {
     if (tsConfigPath) {
         console.log(chalk_1.default.blue(`   📘 Loaded CompilerOptions from: ${path_1.default.relative(root, tsConfigPath)}`));
         const tempProject = new ts_morph_1.Project({ tsConfigFilePath: tsConfigPath, skipAddingFilesFromTsConfig: true });
-        const loadedOptions = tempProject.getCompilerOptions();
-        compilerOptions = {
-            ...loadedOptions,
+        // 合并配置，但保持鲁棒性覆盖
+        Object.assign(compilerOptions, tempProject.getCompilerOptions(), {
             noResolve: true,
             skipLibCheck: true
-        };
+        });
     }
-    else {
-        console.log(chalk_1.default.yellow(`   ⚠️  No tsconfig.json found. Using loose mode defaults.`));
-    }
-    // 5. 初始化 Project
+    // 2. Init Project
     const project = new ts_morph_1.Project({
         skipAddingFilesFromTsConfig: true,
         compilerOptions: compilerOptions
     });
+    // 3. Load Files
     files.forEach(file => project.addSourceFileAtPath(file));
+    // 4. Parse & Extract
     const components = [];
     for (const sourceFile of project.getSourceFiles()) {
         try {
+            // extractComponentInfo 现在会返回 name, filePath, fingerprint 等
             const extracted = (0, ast_parser_1.extractComponentInfo)(sourceFile);
-            if (extracted)
+            if (extracted) {
+                // 这里我们可以做一步相对路径转换，让 Context 里的路径更干净
+                extracted.filePath = path_1.default.relative(root, extracted.filePath);
                 components.push(extracted);
+            }
         }
-        catch (e) { }
+        catch (e) {
+            // Skip failed files
+        }
     }
     return components;
 }
-// 辅助函数
 async function findUp(filename, startDir, stopDir) {
     let current = startDir;
     while (current.startsWith(stopDir)) {

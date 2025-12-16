@@ -1,9 +1,11 @@
 import { Command } from 'commander';
-import { glob } from 'fast-glob';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs-extra';
-import { generateFenceContext } from '../core/runner'; // 复用 Runner
+import { loadTargetFiles } from '@/utils/file-loader';
+import { scanComponents } from '../core/scanner';
+import { inspectStyles } from '../core/style-inspector'; // 改名后的引用
+import { FenceConfig, FenceContext } from '../types';
 
 export const scanCommand = new Command('scan')
   .description('Scan project and generate vibe context')
@@ -13,34 +15,56 @@ export const scanCommand = new Command('scan')
     console.log(chalk.blue(`🛡️  TeamVibeFence starting scan in: ${root}`));
 
     try {
-      // 1. 核心逻辑: 直接调用 Runner
-      // Runner 内部已经处理了并行扫描、AST 解析、Config 读取等所有事情
-      const context = await generateFenceContext(root);
+      // 1. Discovery (Loader)
+      const files = await loadTargetFiles(root);
+      if (files.length === 0) {
+        console.log(chalk.yellow('   ⚠️ No files found.'));
+        return;
+      }
 
-      // 2. 写入 .fence/context.json
+      // 2. Load Config (为了传递给 inspectors)
+      const configPath = path.join(root, '.fence/fence.config.json');
+      let userConfig: FenceConfig | undefined;
+      if (await fs.pathExists(configPath)) {
+        userConfig = await fs.readJSON(configPath);
+      }
+
+      console.log(chalk.blue(`   Processing AST & Styles...`));
+
+      // 3. Parallel Execution (Scanner + Inspector)
+      const [components, tokens] = await Promise.all([
+        scanComponents(files, root),
+        inspectStyles(files, root, userConfig?.inspectors)
+      ]);
+
+      // 4. Data Aggregation (构建 SSOT)
+      const context: FenceContext = {
+        schemaVersion: "0.2.1",
+        generatedAt: new Date().toISOString(),
+        // 简单的 Hash，用于判断 Context 是否变化
+        projectInfo: { name: path.basename(root) },
+        stats: {
+          componentCount: components.length,
+          tokenCount: tokens.length,
+          shadowTokenCount: tokens.filter(t => t.source === 'scan').length
+        },
+        tokens: tokens,
+        components: components
+      };
+
+      // 5. Persistence
       const fenceDir = path.join(root, '.fence');
       await fs.ensureDir(fenceDir);
+      await fs.writeJSON(path.join(fenceDir, 'context.json'), context, { spaces: 2 });
 
-      const outputPath = path.join(fenceDir, 'context.json');
-      await fs.writeJSON(outputPath, context, { spaces: 2 });
-
-      // 3. 输出报告 (Reporting)
-      // 计算一些统计数据用于展示
-      const componentCount = context.components.length;
-      const shadowTokenCount = context.tokens.filter(t => t.source === 'scan').length;
-
+      // 6. Report
       console.log(chalk.green(`\n✅ Scan Complete!`));
-      console.log(`   - Components Processed: ${componentCount}`);
-      console.log(`   - Shadow Tokens Found: ${shadowTokenCount}`);
-      console.log(`   - Context saved to: ${chalk.underline(outputPath)}`);
-
-      // 4. 展示脱敏效果 (Demo)
-      if (componentCount > 0) {
-        console.log(chalk.yellow('\n🔍 Sanitization Preview (What AI sees):'));
-        console.log(chalk.gray('----------------------------------------'));
-        // 只展示第一个组件的骨架，证明我们没泄露代码
-        console.log(context.components[0].skeleton); 
-        console.log(chalk.gray('----------------------------------------'));
+      console.log(`   - Components: ${components.length}`);
+      console.log(`   - Global Tokens: ${tokens.length}`);
+      
+      // 验证链接：打印几个 Token 的 usedBy 看看
+      if (tokens.length > 0) {
+         console.log(chalk.gray(`   Example Token: ${tokens[0].value} used in ${tokens[0].usedBy.length} files`));
       }
 
     } catch (error) {

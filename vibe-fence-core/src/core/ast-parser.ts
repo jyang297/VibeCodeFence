@@ -1,30 +1,40 @@
-// src/core/ast-parser.ts
-import { SourceFile, SyntaxKind, Node } from 'ts-morph';
+import { SourceFile, SyntaxKind, Node, FunctionDeclaration, ArrowFunction } from 'ts-morph';
 import { ComponentMeta, PropItem } from '../types';
 
-export function extractComponentInfo(sourceFile: SourceFile): ComponentMeta | null {
-  const filePath = sourceFile.getFilePath(); // 🌟 获取文件路径
+// 正则: 检测固定宽度/高度 (如 w-10, h-[40px], w-px)
+// 排除 w-full, w-auto, w-screen 这种安全的
+const RIGID_DIMENSION_REGEX = /\b(w|h)-(?!full|auto|screen|min|max|fit)\[?(\d+|px|rem)\]?/i;
 
-  // 1. 尝试找到 Export 的函数声明
+// 正则: 检测弹性布局
+const FLEX_GRID_REGEX = /\b(flex|grid)\b/i;
+
+export function extractComponentInfo(sourceFile: SourceFile): ComponentMeta | null {
+  const filePath = sourceFile.getFilePath();
+
+  // 1. 尝试找到 Export 的函数声明 (function Component...)
   const exportFunc = sourceFile.getFunctions().find(f => f.isExported());
   
   if (exportFunc) {
     const name = exportFunc.getName();
-    // 简单的约定：首字母大写视为组件
     if (name && /^[A-Z]/.test(name)) { 
-      const isDefault = exportFunc.isDefaultExport(); // 🌟 判断导出类型
+      // 🌟 应用磨砂玻璃效果 (直接修改内存 AST)
+      applyFrostedGlass(exportFunc);
+      
+      // 🌟 提取指纹
+      const fingerprint = analyzeStyleFingerprint(exportFunc);
+
       return {
         name,
-        filePath, // ✅ 补全
-        exportType: isDefault ? 'default' : 'named', // ✅ 补全
+        filePath,
+        exportType: exportFunc.isDefaultExport() ? 'default' : 'named',
         props: extractPropsFromFunction(exportFunc),
-        skeleton: sanitizeSkeleton(exportFunc.getText()),
-        fingerprint: { colors: [], spacings: [] }
+        skeleton: exportFunc.getText(), // 获取的是脱敏后的代码
+        fingerprint
       };
     }
   }
 
-  // 2. 尝试找到 Export 的 Const 箭头函数
+  // 2. 尝试找到 Export 的箭头函数 (const Component = ...)
   const variableStmts = sourceFile.getVariableStatements();
   for (const stmt of variableStmts) {
     if (stmt.isExported()) {
@@ -33,17 +43,20 @@ export function extractComponentInfo(sourceFile: SourceFile): ComponentMeta | nu
       const initializer = decl.getInitializer();
 
       if (name && /^[A-Z]/.test(name) && initializer && Node.isArrowFunction(initializer)) {
-        // VariableStatement 本身不能是 default export (除非只有声明)，通常是 named
-        // 复杂的 default export const ... 需要更细致判断，这里简化处理
+        // 🌟 应用磨砂玻璃
+        applyFrostedGlass(initializer);
+        const fingerprint = analyzeStyleFingerprint(initializer);
+        
+        // 重新构造 const export 语句
+        const skeleton = `export const ${name} = ${initializer.getText()};`;
+
         return {
           name,
-          filePath, // ✅ 补全
-          exportType: 'named', // ✅ 补全
+          filePath,
+          exportType: 'named',
           props: extractPropsFromArrowFunc(initializer),
-          skeleton: initializer.getText()
-            .replace(/=>\s*\([\s\S]*?\)/g, '=> (<ImplementationHidden />)')
-            .replace(/=>\s*<[\s\S]*?$/g, '=> <ImplementationHidden />'),
-          fingerprint: { colors: [], spacings: [] }
+          skeleton,
+          fingerprint
         };
       }
     }
@@ -52,11 +65,77 @@ export function extractComponentInfo(sourceFile: SourceFile): ComponentMeta | nu
   return null;
 }
 
-// --- Props 提取辅助函数 (保持不变) ---
+/**
+ * 核心算法: 磨砂玻璃效果 (Semantic Masking)
+ * 遮盖 JSX 文本内容，保留结构和属性
+ */
+function applyFrostedGlass(node: Node) {
+  node.forEachDescendant((child) => {
+    // 遮盖 JSX 文本: <div>Hello World</div> -> <div>...</div>
+    if (Node.isJsxText(child)) {
+      if (child.getText().trim().length > 0) {
+        child.replaceWithText('...'); 
+      }
+    }
+    // 遮盖注释
+    if (child.getKind() === SyntaxKind.SingleLineCommentTrivia || 
+        child.getKind() === SyntaxKind.MultiLineCommentTrivia) {
+        child.replaceWithText('/* hidden */');
+    }
+  });
+}
+
+/**
+ * 核心算法: 风格指纹与约束提取
+ */
+function analyzeStyleFingerprint(node: Node) {
+  const styles = new Set<string>();
+  let hasFixedDimensions = false;
+  let isFlexOrGrid = false;
+
+  node.forEachDescendant((child) => {
+    if (Node.isJsxAttribute(child)) {
+      const name = child.getNameNode().getText();
+      if (name === 'className' || name === 'class') {
+        const initializer = child.getInitializer();
+        let classString = '';
+        
+        if (Node.isStringLiteral(initializer)) {
+          classString = initializer.getLiteralValue();
+        } else if (Node.isJsxExpression(initializer)) {
+           const expr = initializer.getExpression();
+           if (Node.isNoSubstitutionTemplateLiteral(expr)) {
+             classString = expr.getLiteralValue();
+           } else if (Node.isTemplateExpression(expr)) {
+             classString = expr.getHead().getLiteralText();
+           }
+        }
+
+        if (classString) {
+           styles.add(classString.trim());
+           if (RIGID_DIMENSION_REGEX.test(classString)) hasFixedDimensions = true;
+           if (FLEX_GRID_REGEX.test(classString)) isFlexOrGrid = true;
+        }
+      }
+    }
+  });
+
+  return {
+    colors: [], 
+    spacings: [],
+    stylePatterns: Array.from(styles),
+    constraints: {
+      hasFixedDimensions,
+      isFlexOrGrid
+    }
+  };
+}
+
+// --- Props Extraction Helpers ---
+
 function extractPropsFromFunction(func: any): PropItem[] {
   const params = func.getParameters();
   if (params.length === 0) return [];
-
   const propsParam = params[0];
   const props: PropItem[] = [];
 
@@ -66,13 +145,18 @@ function extractPropsFromFunction(func: any): PropItem[] {
       props.push({
         name: el.getName(),
         type: 'unknown',
-        required: true
+        required: true,
+        description: undefined // 暂时不提取 JSDoc
       });
     });
   } else {
     const typeNode = propsParam.getTypeNode();
     if (typeNode) {
-        props.push({ name: 'props', type: typeNode.getText(), required: true });
+        props.push({ 
+            name: 'props', 
+            type: typeNode.getText(), 
+            required: true 
+        });
     }
   }
   return props;
@@ -80,30 +164,4 @@ function extractPropsFromFunction(func: any): PropItem[] {
 
 function extractPropsFromArrowFunc(arrowFunc: any): PropItem[] {
     return extractPropsFromFunction(arrowFunc);
-}
-
-function sanitizeSkeleton(code: string): string {
-  // 策略：不尝试精确匹配 return 里的 JSX，而是把整个函数体核心替换掉
-  // 但为了保留 Props 定义，这比较难。
-  
-  // 改进的正则策略：
-  // 1. 先匹配 return (...); 的形式
-  // 2. 如果没匹配到，再匹配 return <...>; 的形式
-  // 3. 使用非贪婪匹配，防止吃掉太多
-  
-  let cleaned = code;
-  
-  // 匹配 return ( ... ); 
-  // [\s\S]*? 是非贪婪匹配所有字符
-  const returnParenRegex = /return\s*\([\s\S]*?\);?/g;
-  
-  if (returnParenRegex.test(cleaned)) {
-     cleaned = cleaned.replace(returnParenRegex, 'return <ImplementationHidden />;');
-  } else {
-     // 只有当上面没匹配时，才尝试匹配直接返回 JSX 的情况 return <div...
-     const returnJsxRegex = /return\s*<[\s\S]*?;?/g;
-     cleaned = cleaned.replace(returnJsxRegex, 'return <ImplementationHidden />;');
-  }
-
-  return cleaned;
 }
